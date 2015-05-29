@@ -74,8 +74,8 @@ var Keyboard = Backbone.View.extend({
 			for (var x = 0; x < 127; ++x){
  			     this.midi[x] = 440 * Math.pow(2, (x - 69) / 12);
 			     var osc = this.ctx.createOscillator();
-			     osc.type = 'sawtooth';
-			     osc.frequency.setTargetAtTime(this.midi[x],0,0);
+			     osc.type = 'triangle';
+			     osc.frequency.setValueAtTime(this.midi[x],0);
 			     osc.start();
 			     this.oscillators.push(osc);
 			}
@@ -103,24 +103,30 @@ var Keyboard = Backbone.View.extend({
 		'mouseup .octave .blackkeyinner': 'stopKey',
 	},
 
-	playKey: function(ev){
-			var midinote = $(ev.target).data('note');
+	play:	function(midinote){
 			var osc = this.oscillators[midinote];
  			osc.connect(this.ctx.destination);
+	},
+	stop:	function(midinote){
+			var osc = this.oscillators[midinote];
+ 			osc.disconnect();
+	},
+
+	playKey: function(ev){
+			var midinote = $(ev.target).data('note');
+			this.play(midinote);
 	},
 
 	stopKey: function(ev){
 			var midinote = $(ev.target).data('note');
-			var osc = this.oscillators[midinote];
- 			osc.disconnect();
+			this.stop(midinote);
 	},
 
 	playNote: function(note){
 			var octave = Math.floor(note/12);
 			console.log(octave);
 			var midinote = ((octave+this.base)*12) + note%12;
-			var osc = this.oscillators[midinote];
- 			osc.connect(this.ctx.destination);
+			this.play(midinote);
 			var key = this.getKey(octave,note);
 			key.keypress();
 	},
@@ -128,8 +134,7 @@ var Keyboard = Backbone.View.extend({
 	stopNote: function(note){
 			var octave = Math.floor(note/12);
 			var midinote = ((octave+this.base)*12) + note%12;
-			var osc = this.oscillators[midinote];
- 			osc.disconnect();
+			this.stop(midinote);
 			var key = this.getKey(octave,note);
 			key.keyremove();
 	},
@@ -159,4 +164,61 @@ $(document).keyup(function(event) {
 	keyboard.stopNote(ind);	
 });
 
-window.navigator.requestMIDIAccess();
+navigator.requestMIDIAccess().then(onMIDIInit,onMIDIReject );
+
+function hookUpMIDIInput(midiAccess) {
+			
+			var haveAtLeastOneDevice=false;
+		    	var inputs = midiAccess.inputs.values();
+		        for (var input = inputs.next(); input && !input.done; input = inputs.next()) {
+		    	     input.value.onmidimessage = MIDIMessageEventHandler;
+		    	     haveAtLeastOneDevice = true;
+		        }
+
+		        }
+
+function onMIDIInit(midi) {
+			midiAccess = midi;
+			hookUpMIDIInput(midiAccess);
+			midiAccess.onstatechange=hookUpMIDIInput;
+		}
+function onMIDIReject(err) {
+			alert("The MIDI system failed to start.  You're gonna have a bad time.");
+		}
+function MIDIMessageEventHandler(event) {
+			// Mask off the lower nibble (MIDI channel, which we don't care about)
+			switch (event.data[0] & 0xf0) {
+				case 0x90:
+					if (event.data[2]!=0) {  // if velocity != 0, this is a note-on message
+						noteOn(event.data[1]);
+						return;
+					}
+					// if velocity == 0, fall thru: it's a note-off.  MIDI's weird, ya'll.
+				case 0x80:
+					noteOff(event.data[1]);
+					return;
+			}
+		}
+
+function noteOn(noteNumber) {
+			//oscillator.frequency.cancelScheduledValues(0);
+			//oscillator.frequency.setTargetAtTime( frequencyFromNoteNumber(noteNumber), 0, portamento );
+			//envelope.gain.cancelScheduledValues(0);
+			//envelope.gain.setTargetAtTime(1.0, 0, attack);
+			keyboard.play(noteNumber);
+		}
+
+function noteOff(noteNumber) {
+			//var position = activeNotes.indexOf(noteNumber);
+			//if (position!=-1) {
+			//	activeNotes.splice(position,1);
+			//}
+			//if (activeNotes.length==0) {	// shut off the envelope
+			//	envelope.gain.cancelScheduledValues(0);
+			//	envelope.gain.setTargetAtTime(0.0, 0, release );
+			//} else {
+			//	oscillator.frequency.cancelScheduledValues(0);
+			//	oscillator.frequency.setTargetAtTime( frequencyFromNoteNumber(activeNotes[activeNotes.length-1]), 0, portamento );
+			//}
+			keyboard.stop(noteNumber);
+		}
